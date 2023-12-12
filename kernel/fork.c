@@ -2237,6 +2237,10 @@ struct task_struct *fork_idle(int cpu)
 	return task;
 }
 
+#ifdef CONFIG_KPROFILES
+extern int kp_active_mode(void);
+#endif
+
 /*
  *  Ok, this is the main fork-routine.
  *
@@ -2255,25 +2259,45 @@ long _do_fork(unsigned long clone_flags,
 	long nr;
 
 	/* Boost DDR bus to the max for 50 ms when userspace launches an app */
-	if (task_is_zygote(current))
-		devfreq_boost_kick_max(DEVFREQ_CPU_LLCC_DDR_BW, 50);
-
+	if (task_is_zygote(current)) {
+ #ifdef CONFIG_KPROFILES
+  /*
+   * Boost CPU and DDR for 60ms if performance mode is active.
+    * Boost CPU and DDR for 50ms if default mode is active to retain default behaviour.
+    * Boost CPU & DDR for 25ms if balanced profile is enabled
+    * Dont boost CPU & DDR if battery saver profile is enabled
+    */
+     switch (kp_active_mode()) {
+       case 0:
+            devfreq_boost_kick_max(DEVFREQ_CPU_LLCC_DDR_BW, 50);
+           break;
+       case 2:
+           devfreq_boost_kick_max(DEVFREQ_CPU_LLCC_DDR_BW, 25);
+           break;
+       case 3:
+          devfreq_boost_kick_max(DEVFREQ_CPU_LLCC_DDR_BW, 60);
+          break;
+       default:
+           pr_info("Battery Profile Active, Skipping Boost...\n");
+           break;
+       }
+ #else
+       devfreq_boost_kick_max(DEVFREQ_CPU_LLCC_DDR_BW, 50);
+#endif
+	}
+	
 	/*
 	 * Determine whether and which event to report to ptracer.  When
 	 * called from kernel_thread or CLONE_UNTRACED is explicitly
 	 * requested, no event is reported; otherwise, report if the event
 	 * for the type of forking is enabled.
 	 */
-	if (!(clone_flags & CLONE_UNTRACED)) {
-		if (clone_flags & CLONE_VFORK)
-			trace = PTRACE_EVENT_VFORK;
-		else if ((clone_flags & CSIGNAL) != SIGCHLD)
-			trace = PTRACE_EVENT_CLONE;
-		else
-			trace = PTRACE_EVENT_FORK;
-
-		if (likely(!ptrace_event_enabled(current, trace)))
-			trace = 0;
+	if (!(clone_flags & CLONE_UNTRACED) &&
+		((clone_flags & CLONE_VFORK && (trace = PTRACE_EVENT_VFORK)) ||
+		((clone_flags & CSIGNAL) != SIGCHLD && (trace = PTRACE_EVENT_CLONE)) ||
+		(trace = PTRACE_EVENT_FORK)) &&
+		likely(!ptrace_event_enabled(current, trace))) {
+		trace = 0;
 	}
 
 	p = copy_process(clone_flags, stack_start, stack_size, parent_tidptr,
