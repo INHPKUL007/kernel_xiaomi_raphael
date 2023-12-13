@@ -1,120 +1,99 @@
-#!/bin/bash
-rm .version
-# Bash Color
-green='\033[01;32m'
-red='\033[01;31m'
-blink_red='\033[05;31m'
-restore='\033[0m'
-
-clear
+#!/bin/bash 
+## kernel compiler script by INHPKUL007 @ github.com
 
 # Resources
-export CLANG_PATH=~/tc/aosp/clang-r498229b/bin
-export PATH=${CLANG_PATH}:${PATH}
+CLANG=clang-r498229b
+LLVM_PATH=~/tc
+LLVM=$LLVM_PATH/$CLANG/bin
+
+# Variables
+BASE_VER="Nano-kernel"
+DATE=$(date +"%Y%m%d-%H%M")
+ZIP_NAME="$BASE_VER-$DATE"
+
+# Export platfrom
+export PATH=${LLVM}:${PATH}
 export THINLTO_CACHE=~/ltocache/
-DEFCONFIG="raphael_defconfig"
-
-# Kernel Details
-REV="R5.2"
-EDITION="STANDALONE-DSP"
-VER="$REV"-"$EDITION"
-
-# Vars
-BASE_AK_VER="SOVIET-STAR-K20P-"
-DATE=`date +"%Y%m%d-%H%M"`
-AK_VER="$BASE_AK_VER$VER"
-ZIP_NAME="$AK_VER"-"$DATE"
 export ARCH=arm64
 export SUBARCH=arm64
-export KBUILD_BUILD_USER=NATO66613
-export KBUILD_BUILD_HOST=KREMLIN
+export KBUILD_BUILD_USER=INHPKUL007
+export KBUILD_BUILD_HOST=SAKSHAM
 
-# Paths
-KERNEL_DIR=`pwd`
-REPACK_DIR=~/AnyKernel3
-ZIP_MOVE=~/AK-releases
+# Defconfig file 
+DEFCON="raphael_defconfig"
 
-# Functions
-function clean_all {
-		rm -rf $REPACK_DIR/Image* $REPACK_DIR/dtbo.img
-		cd $KERNEL_DIR
-		echo
-		make clean && make mrproper
+# Color Function
+print()
+{
+	echo -e '\033[01;32m'${1}'\033[0m' 
 }
 
-function make_kernel {
-		echo
-		make LLVM=1 LLVM_IAS=1 CC="ccache clang" $DEFCONFIG
-		make LLVM=1 LLVM_IAS=1 CC="ccache clang" -j$(grep -c ^processor /proc/cpuinfo)
-
+# Script Functions
+prompt_yes_no() 
+{
+	local response
+	read -p "$1" response
+	case "$response" in 
+		y|Y|"") return 0 ;;
+		n|N) return 1 ;;
+		*) echo "Invalid response. Try agian." ; prompt_yes_no "$1" ;;
+	esac
 }
 
-function make_zip {
-                cp out/arch/arm64/boot/Image.gz-dtb $REPACK_DIR
-                cp out/arch/arm64/boot/dtbo.img $REPACK_DIR
-		cd $REPACK_DIR
-		zip -r9 `echo $ZIP_NAME`.zip *
-		mv  `echo $ZIP_NAME`*.zip $ZIP_MOVE
-		cd $KERNEL_DIR
+properclean()
+{
+	rm $HOME/ziptool/Image* $HOME/ziptool/dtbo.img
+	rm $HOME/Nano-kernel*.zip
+	cd $PWD || exit
+	make mrproper
+}
+
+kernelcompile() 
+{
+	make LLVM=1 LLVM_IAS=1 CC="ccache clang" $DEFCON
+	make LLVM=1 LLVM_IAS=1 CC="ccache clang" \
+	-j$(grep -c ^processor /proc/cpuinfo) \
+	2> build.log | grep -vE "warning|error:" || exit
+}
+
+zippingtool()
+{	
+	local out=out/arch/arm64/boot
+	cp $out/Image.gz-dtb $HOME/ziptool
+	cp $out/dtbo.img $HOME/ziptool
+	cd $HOME/ziptool || exit
+	zip -r9 `echo $ZIP_NAME`.zip *
+	mv  `echo $ZIP_NAME`*.zip $HOME
+	cd $PWD || exit
 }
 
 DATE_START=$(date +"%s")
 
-echo -e "${green}"
-echo "-----------------"
-echo "Making Kernel:"
-echo "-----------------"
-echo -e "${restore}"
-echo
+print "--------------------"
+print "  Compiling Kernel  "
+print "--------------------"
 
-while read -p "Do you want to clean stuffs (y/n)? " cchoice
-do
-case "$cchoice" in
-	y|Y )
-		clean_all
-		echo
-		echo "All Cleaned now."
-		break
-		;;
-	n|N )
-		break
-		;;
-	* )
-		echo
-		echo "Invalid try again!"
-		echo
-		;;
-esac
-done
+# Clean stuffs prompt
 
-echo
+if prompt_yes_no "Do you want to clean stuffs [Y/n]? "; then
+	properclean
+	print "All cleared..."
+fi
 
-while read -p "Do you want to build?" dchoice
-do
-case "$dchoice" in
-	y|Y )
-		make_kernel
-                make_zip
-		break
-		;;
-	n|N )
-		break
-		;;
-	* )
-		echo
-		echo "Invalid try again!"
-		echo
-		;;
-esac
-done
+# Compile prompt
 
-echo -e "${green}"
-echo "-------------------"
-echo "Build Completed in:"
-echo "-------------------"
-echo -e "${restore}"
+if prompt_yes_no "Do you want to compile kernel [Y/n]? "; then
+	kernelcompile
+	zippingtool
+fi
+
+print "------------------------"
+print " Compiling completed... "
+print "------------------------"
 
 DATE_END=$(date +"%s")
-DIFF=$(($DATE_END - $DATE_START))
-echo "Time: $(($DIFF / 60)) minute(s) and $(($DIFF % 60)) seconds."
-echo
+duration=$((DATE_END - DATE_START))
+minutes=$((duration / 60))
+seconds=$((duration % 60))
+print "Time: $minutes minute(s) and $seconds seconds."
+
